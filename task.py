@@ -174,7 +174,7 @@ class Squality(EvaluationTask):
         self.metrics = {
             "BertScore": AutoMetric.from_name("bertscore"),
             "Rouge": AutoMetric.from_name("rouge"),
-            "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
+            # "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
         }
 
     def prepare_row(self, row: dict):
@@ -218,7 +218,7 @@ class TriviaQA(EvaluationTask):
         self.metrics = {
             "BertScore": AutoMetric.from_name("bertscore"),
             "Rouge": AutoMetric.from_name("rouge"),
-            "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
+            # "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
         }
 
     def prepare_row(self, row: dict):
@@ -288,7 +288,7 @@ IMPORTANT:
         self.metrics = {
             "BertScore": AutoMetric.from_name("bertscore"),
             "Rouge": AutoMetric.from_name("rouge"),
-            "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
+            # "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
         }
 
     def prepare_row(self, row: dict):
@@ -337,7 +337,7 @@ class QMSum(EvaluationTask):
         self.metrics = {
             "BertScore": AutoMetric.from_name("bertscore"),
             "Rouge": AutoMetric.from_name("rouge"),
-            "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
+            # "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
         }
 
     def prepare_row(self, row: dict):
@@ -379,7 +379,7 @@ IMPORTANT: You should only use the infomation provided in the paragraphs to answ
         self.metrics = {
             "BertScore": AutoMetric.from_name("bertscore"),
             "Rouge": AutoMetric.from_name("rouge"),
-            "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
+            # "LLM-Rouge": AutoMetric.from_name("llm-rouge"),
         }
 
     def prepare_row(self, row: dict):
@@ -453,7 +453,32 @@ IMPORTANT: You should simply provide the letter corresponding to the answer choi
 
         return preds
 
+class GSM8KTask(EvaluationTask):
+    DEFAULT_PROMPT_TEMPLATE = """{question}
+"""
 
+    def __init__(self, prompt_template=DEFAULT_PROMPT_TEMPLATE, max_tokens=32, **kwargs):
+        super().__init__(
+            prompt_template=prompt_template,
+            max_tokens=max_tokens,
+            hf_args=["openai/gsm8k", "main"],  # Hugging Face dataset ID
+            **kwargs
+        )
+
+        self.test_split = "test"
+
+        self.metrics = {
+            "ExactMatch": AutoMetric.from_name("exact_match"),
+        }
+
+    def prepare_row(self, row: dict):
+        return {
+            "context": row["question"],
+            "question": row["question"],
+            "prompt": self.prompt_template.format(question=row["question"]).strip(),
+            "labels": [row["answer"]]
+        }
+        
 class ScrollsQuality(LogitEvaluationTask):
     """
     Evaluation dataset derived from `tau/scrolls`.
@@ -769,6 +794,7 @@ TASK_MAPPING = {
     "squality": Squality,
     "triviaqa": TriviaQA,
     "truthfulqa": TruthfulQA,
+    "gsm8k": GSM8KTask,
 }
 
 

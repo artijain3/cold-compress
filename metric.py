@@ -85,12 +85,23 @@ class ExactMatchScore(Metric):
         pass
 
     def compute(self, prompts, predictions, references):
-        return np.mean(
-            [
-                1 if p.split() == r.split() else 0
-                for p, r in zip(predictions, references)
-            ]
-        )
+        answer = []
+        for p, r, in zip(predictions, references):
+            # print(f"p ==> {p}")
+            if type(r) == list:
+                r = r[0]
+            if p.split() == r.split():
+                answer.append(1)
+            else:
+                answer.append(0)
+                
+        return np.mean(answer)
+        # return np.mean(
+        #     [
+        #         1 if p.split() == r.split() else 0 
+        #         for p, r in zip(predictions, references)
+        #     ]
+        # )
 
 
 class LevenshteinDistance(Metric):
