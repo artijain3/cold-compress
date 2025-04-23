@@ -6,12 +6,22 @@ max_cache_length: [1.0]  # [Do not Change] Control compression ratio with min_re
 global_tokens: 4
 # min_recovery_frac: 0.85  # Higher is less compression (0.85 means we choose the policy which compresses the most tokens AND recovers 85% of the full attention matrix)
 hybrid_strategies:  # 
-  - strategy: "window"
-    recent_window: 0.1  # Fraction of recent tokens to keep
-  - strategy: "window_heavy_hitter"
-    heavy_hitter_frac: 0.25  # Fraction of important tokens to keep
-    recent_window: 0.1  # Fraction of recent tokens to keep
-  - strategy: "window_heavy_hitter"
-    heavy_hitter_frac: 0.5 # Fraction of important tokens to keep
-    recent_window: 0.1  # Fraction of recent tokens to keep
+  - strategy: "special"
+  - strategy: "special_punc"
+  - strategy: "special_punc_heavy_hitter"
+    heavy_hitter_frac: 0.5 # @artij: where does this value come from?
+  - strategy: "special_punch_window_heavy_hitter"
+    heavy_hitter_frac: 0.5 # @artij: where does this value come from?
+    recent_window: 0.1 # @artij: where does this value come from?
   - strategy: "full"
+  
+
+  # - strategy: "window"
+  #   recent_window: 0.1  # Fraction of recent tokens to keep
+  # - strategy: "window_heavy_hitter"
+  #   heavy_hitter_frac: 0.25  # Fraction of important tokens to keep
+  #   recent_window: 0.1  # Fraction of recent tokens to keep
+  # - strategy: "window_heavy_hitter"
+  #   heavy_hitter_frac: 0.5 # Fraction of important tokens to keep
+  #   recent_window: 0.1  # Fraction of recent tokens to keep
+  # - strategy: "full"

@@ -4,11 +4,38 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from prompt_compression import get_prompt_compressor_constructor
 from quantization_utils import quantize_tensor, dequantize_tensor
-
+import json
+import os
 import argparse
+import csv
 import torch
+import datetime
 import torch.nn as nn
 
+def write_strategy_scores_to_csv(filename, data_rows=[]):
+    file_exists = os.path.isfile(filename)
+
+    with open(filename, mode='a', newline='') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=["layerID", "head", "strategy", "score"])
+
+        # Write the header only if the file doesn't already exist
+        if not file_exists:
+            writer.writeheader()
+
+        for row in data_rows:
+            writer.writerow({
+                "layerID": row["layerID"],
+                "head": row["head"],
+                "strategy": row["strategy"],
+                "score": row["score"]
+            })
+            
+current_directory = os.getcwd()
+allfilename = "hybrid_attention_profiling.csv"
+FILENAME = os.path.join(current_directory, "profiling_results", allfilename)
+PER_HEAD_FILENAME = os.path.join(current_directory, "profiling_results", "per_head_profiling.csv")
+write_strategy_scores_to_csv(FILENAME)
+write_strategy_scores_to_csv(PER_HEAD_FILENAME)
 
 def add_cache_arguments(parser: argparse.ArgumentParser):
     group = parser.add_argument_group("cache_args")
@@ -616,11 +643,11 @@ class KVCacheHeavyHitter(KVCacheHeadSpecific):
     # This class mostly follows the logic in ScissorHands (https://arxiv.org/abs/2305.17118)
     # But it is very similar to other Heavy Hitter methods (H20, PyramidKV, etc.)
     relevant_kwargs = [
-        "max_cache_length",
-        "max_seq_length",
-        "cache_bits",
-        "global_tokens",
-        "history_window_size",
+        "max_cache_length", # how many tokens can be cached
+        "max_seq_length", # max length of sequences
+        "cache_bits", # used for quantization
+        "global_tokens", # attention sinks
+        "history_window_size", # history to keep in attention history
         "recent_window",
         "attn_thresholding",
     ]
@@ -642,7 +669,7 @@ class KVCacheHeavyHitter(KVCacheHeadSpecific):
             variable_length,
             **kwargs,
         )
-
+        
         # Initialize a buffer for the attention histories
         history_num_shape = (
             max_batch_size,
@@ -695,7 +722,7 @@ class KVCacheHeavyHitter(KVCacheHeadSpecific):
         """
 
         # Resize attn to be max cache length with zero padding if need be
-        seq_len = attn.shape[-1]
+        seq_len = attn.shape[-1] # number of keys
 
         if (
             is_prefill and attn.ndim == 4
@@ -704,7 +731,7 @@ class KVCacheHeavyHitter(KVCacheHeadSpecific):
             attn = attn.squeeze(0).sum(dim=1) / (seq_len - input_pos)
 
         attn = attn.view(1, self.n_heads, -1, 1)
-        attn = (attn >= 1 / self.cache_cts).int() if self.attn_thresholding else attn
+        attn = (attn >= 1 / self.cache_cts).int() if self.attn_thresholding else attn # was this token attended to more than threshold --> good for figuring out importance
 
         # Torch.compile doesn't support dyanmic slicing so we need to zero-pad to full dimension
         padding = max(self.max_cache_length - seq_len, 0)
@@ -715,20 +742,20 @@ class KVCacheHeavyHitter(KVCacheHeadSpecific):
 
         history_idx = self.attn_counter % self.history_window_size
 
+        # attn is the latest attention value for each token (per head)
         if self.history_window_size == 1:  # We consider the full history
-            self.attn_history_num[:, :, :, history_idx] += attn
-        else:
+            self.attn_history_num[:, :, :, history_idx] += attn # accumulate over time
+        else: # looking at recent attention patterns like moving average
             self.attn_history_num[:, :, :, history_idx] = attn
-        self.attn_history_denom += 1
+        self.attn_history_denom += 1 # how many times a token has been updated --> Q: why are you blindly adding 1 to everything?
         self.attn_counter += 1
 
-    def _eviction_idx(self, input_pos):
+    def _eviction_idx(self, input_pos): # returns the positions of the tokens that should be evicted
         # Identify the token with consistently "lowest" attention
-        numerator = self.attn_history_num.sum(dim=-1).float()
+        numerator = self.attn_history_num.sum(dim=-1).float() # summing attention counts over whole history window (gives total importance each token had) --> [B, H, T]
 
-        if (
-            self.history_window_size == 1
-        ):  # We use the full history (there is no clamping around a fixed window)
+        # number of times token has been updated
+        if (self.history_window_size == 1):  # We use the full history (there is no clamping around a fixed window)
             denominator = self.attn_history_denom.clamp_min(1)
         else:
             # The denominator is the number of times this token's history has been recorded
@@ -740,27 +767,21 @@ class KVCacheHeavyHitter(KVCacheHeadSpecific):
         # Save the global & most recent tokens from being evicted
         avg_attn.masked_fill_(
             torch.logical_or(
-                self.pos < self.global_tokens,
-                self.pos >= input_pos - self.recent_window,
+                self.pos < self.global_tokens, # keep the attention sink tokens (set to 1)
+                self.pos >= input_pos - self.recent_window, # recently added (set to 1)
             ),
             1.0,
         )
 
-        avg_attn.masked_fill_(self.pos == -1, 0.0)
+        avg_attn.masked_fill_(self.pos == -1, 0.0) # if there's slots that aren't used
 
-        fill_idxs = avg_attn.argmin(dim=-1).squeeze()
+        fill_idxs = avg_attn.argmin(dim=-1).squeeze() # choose the token with lowest average attention per head (for each batch, for each head)
 
         # Zero-out the attention history for these newly inserted slots
-        num_fill = fill_idxs.view(1, -1, 1, 1).expand(
-            1, -1, 1, self.attn_history_num.shape[-1]
-        )
+        num_fill = fill_idxs.view(1, -1, 1, 1).expand(1, -1, 1, self.attn_history_num.shape[-1])
         denom_fill = fill_idxs.view(1, -1, 1)
-        self.attn_history_num.scatter_(
-            2, num_fill, torch.zeros_like(num_fill, dtype=self.attn_history_num.dtype)
-        )
-        self.attn_history_denom.scatter_(
-            2, denom_fill, torch.zeros_like(denom_fill, dtype=torch.int32)
-        )
+        self.attn_history_num.scatter_(2, num_fill, torch.zeros_like(num_fill, dtype=self.attn_history_num.dtype))
+        self.attn_history_denom.scatter_(2, denom_fill, torch.zeros_like(denom_fill, dtype=torch.int32))
 
         return fill_idxs
 
@@ -783,9 +804,12 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         max_batch_size,
         n_heads,
         head_dim,
+        layer_idx,
         dtype=torch.bfloat16,
         **kwargs,
     ):
+        self.layer_idx = layer_idx
+        # self.aggregate_metrics = defaultdict(list)
         self.attn_thresholding = False
         self.history_window_size = 400  # Default value for ScissorHands
         self.recent_window = (
@@ -799,19 +823,17 @@ class KVCacheHybrid(KVCacheHeavyHitter):
             variable_length=True,
             **kwargs,
         )
-
+        
         self.requires_special = any(
             ["special" in strat["strategy"] for strat in self.hybrid_strategies]
         )
         mask_shape = (max_batch_size, n_heads, self.max_cache_length)
         if self.requires_special:
-            special_ids = [torch.tensor(ids) for ids in kwargs["token_ids"]["special"]]
-            self.register_buffer("special_ids", torch.nested.nested_tensor(special_ids))
+            special_ids = [torch.tensor(ids) for ids in kwargs["token_ids"]["special"]] # converts a list of special token IDs into list of tensors
+            self.register_buffer("special_ids", torch.nested.nested_tensor(special_ids)) # registers special_ids as a nested tensor in buffer (nested tensor is structure for lsits of tensors that have variable lengths)
             # As well as a mask showing where special ids are in the KV cache
             # We store this to avoid re-computing the mask every time and having to store all input_ids
-            self.register_buffer(
-                "special_mask", torch.zeros(mask_shape, dtype=torch.bool)
-            )
+            self.register_buffer("special_mask", torch.zeros(mask_shape, dtype=torch.bool)) # creates boolean mask with shape of mask shape to indicate where special tokens appear
             self.register_buffer("num_special", torch.zeros((1,), dtype=torch.int))
 
         self.requires_punc = any(
@@ -853,7 +875,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
     ):
         if apply_heavy_hitter:
             numerator = (
-                self.attn_history_num[:, head_idx, : self.cache_cts[head_idx]]
+                self.attn_history_num[:, head_idx, : self.cache_cts[head_idx]] # batch, n_heads, cache_len, history_window
                 .sum(dim=-1)
                 .float()
             )
@@ -869,7 +891,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
                     :, head_idx, : self.cache_cts[head_idx]
                 ].clamp_max(self.history_window_size)
             score = numerator / denominator
-        else:
+        else: # if no heavy hitters, use position
             score = self.pos[:, head_idx, : self.cache_cts[head_idx]].clone().float()
 
         save_mask = torch.zeros_like(score, dtype=torch.bool)
@@ -909,9 +931,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
             return _end_idx(), False
 
         # Every strategy has a budget for global tokens
-        budget = torch.tensor(
-            [self.global_tokens], dtype=torch.int, device=input_pos.device
-        )
+        budget = torch.tensor([self.global_tokens], dtype=torch.int, device=input_pos.device)
         if "special" in name:
             budget += self.num_special
 
@@ -1067,7 +1087,10 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         device = cum_attn.device
         n_heads, seq_len = cum_attn.shape
         masks = []
+        # print(f"self.hybrid_strats --> {self.hybrid_strategies}")
+        
         for s in self.hybrid_strategies:
+            # Create an empty boolean mask [n_heads, seq_len, seq_len] for each strategy
             strat_mask = torch.zeros(
                 n_heads, seq_len, seq_len, dtype=torch.bool, device=device
             )
@@ -1075,10 +1098,9 @@ class KVCacheHybrid(KVCacheHeavyHitter):
             strat_mask[:, :, : self.global_tokens] = True
 
             name = s["strategy"]
+            # If the strategy includes 'special', include special token positions in the mask
             if "special" in name:
-                strat_mask |= special_mask.view(1, 1, -1).expand(
-                    n_heads, seq_len, seq_len
-                )
+                strat_mask |= special_mask.view(1, 1, -1).expand(n_heads, seq_len, seq_len)
 
             if "punc" in name:
                 strat_mask |= punc_mask.view(1, 1, -1).expand(n_heads, seq_len, seq_len)
@@ -1099,7 +1121,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
                 )
 
             if "heavy_hitter" in name:
-                # Compute heavy hitters over tokens which are still masked
+                # Compute heavy hitters over tokens which are still masked --> what is still available
                 avail_idxs = torch.where(~strat_mask[0, -1, :])[0]
 
                 attn_slice = cum_attn.gather(
@@ -1136,6 +1158,10 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         return torch.stack(masks)
 
     def profile_attn_heads(self, input_pos, attn, **kwargs):
+        # input_pos --> position in the sequence from which attention starts being computed (used for normalization)
+        # attn --> attention weights from a transformer (1, num_heads, seq_len, seq_len)
+        # kwargs["input_ids"] --> tokenized input sequence (1, seq_len)
+        
         input_ids = kwargs["input_ids"]
         input_ids = input_ids.squeeze(0)
         seq_len = input_ids.shape[-1]
@@ -1150,27 +1176,53 @@ class KVCacheHybrid(KVCacheHeavyHitter):
             punc_mask = self.build_punc_ids_mask(input_ids)
             self.num_punc = punc_mask.sum()
 
-        cum_attn = (
-            None  # Only aggregate attention if its needed by one of the strategies
-        )
+        # Only aggregate attention if its needed by one of the strategies
+        cum_attn = (None)
+        
         if any(["heavy_hitter" in s["strategy"] for s in self.hybrid_strategies]):
             # Average of cumulative attention probs (use input_pos to normalize)
-            cum_attn = attn.squeeze(0).sum(dim=1) / (seq_len - input_pos)
+            cum_attn = attn.squeeze(0).sum(dim=1) / (seq_len - input_pos) # [num_heads, seq_len]
 
-        masks_for_scoring = self.build_masks(
-            cum_attn, special_mask, punc_mask, total_len=seq_len
-        )
-
+        masks_for_scoring = self.build_masks(cum_attn, special_mask, punc_mask, total_len=seq_len)
+        
         # Compute optimal strategies for each head based on prompt proportions
-        attn_rep = attn.expand(masks_for_scoring.shape[0], -1, -1, -1)
-        compressed_scores = (
-            attn_rep.masked_fill(~masks_for_scoring, 0).sum(dim=-1).mean(dim=-1)
-        )
-
+        # applies the masks for scoring to the attention rep
+        # higher score the better bc accumulation of attention score across the last dim, batch
+        attn_rep = attn.expand(masks_for_scoring.shape[0], -1, -1, -1) # shape expanded to match number of strategies
+        compressed_scores = (attn_rep.masked_fill(~masks_for_scoring, 0).sum(dim=-1).mean(dim=-1))
+        
+        data_rows = []
+        layer_id = self.layer_idx
+        for head_idx in range(compressed_scores.shape[1]):
+            for strat_idx, score in enumerate(compressed_scores[:, head_idx]):
+                data_rows.append({
+                    "layerID": layer_id,
+                    "head": head_idx,
+                    "strategy": self.hybrid_strategies[strat_idx]["strategy"],
+                    "score": score.item()
+                })
+        
+        write_strategy_scores_to_csv(FILENAME, data_rows)
+        
         # For each column, return the first row which has cost >= min_recovery_frac
+        # creates a boolean tensor where True is strategies that meet or exceed the minimum recovery fraction 
+        # coverts the boolen tensor to int
+        # first strategy that exceeds that threshold
+        data_row = []
         cache_strategies = (
             (compressed_scores >= self.min_recovery_frac).int().argmax(dim=0)
         )
+        
+        for head_idx, strat_idx in enumerate(cache_strategies):
+            strat = self.hybrid_strategies[strat_idx]["strategy"]
+            selected_score = compressed_scores[strat_idx, head_idx].item()
+            data_row.append(
+                    {"layerID": layer_id,
+                    "head": head_idx,
+                    "strategy": strat,
+                    "score": selected_score}
+                )
+        write_strategy_scores_to_csv(PER_HEAD_FILENAME, data_row)
 
         # Base insertions on the optimal strategy across full sequence length
         assert self.max_cache_length >= seq_len

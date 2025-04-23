@@ -213,10 +213,12 @@ class Transformer(nn.Module):
                 k: kwargs[k][layer_idx] if k in layerwise_keys else kwargs[k]
                 for k in relevant_kwargs
             }
+            # layer_kwargs["layer_idx"] = layer_idx # @artij: to pass in layer_idx into the KVCacheHybrid
             b.attention.kv_cache = cache_constructor(
                 self.max_batch_size,
                 self.config.n_local_heads,
                 head_dim,
+                layer_idx,
                 dtype,
                 **layer_kwargs,
             )
