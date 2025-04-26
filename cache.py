@@ -191,6 +191,7 @@ class KVCache(ABC, nn.Module):
         max_batch_size,
         n_heads,
         head_dim,
+        layer_idx=None,
         dtype=torch.bfloat16,
         head_specific=False,  # IFF True, heads can contain different tokens, e.g., cache evictions are "head_specific".
         variable_length=False,  # IFF True, the number of tokens inserted can vary across heads. Only true for KVCacheHybrid.
@@ -470,6 +471,7 @@ class KVCacheHeadSpecific(KVCache):
         max_batch_size,
         n_heads,
         head_dim,
+        layer_idx=None,
         dtype=torch.bfloat16,
         variable_length=False,
         **kwargs,
@@ -519,7 +521,7 @@ class KVCacheHeadSpecific(KVCache):
 
 class KVCacheFull(KVCacheHeadConstant):
     def __init__(
-        self, max_batch_size, n_heads, head_dim, dtype=torch.bfloat16, **kwargs
+        self, max_batch_size, n_heads, head_dim, layer_idx=None, dtype=torch.bfloat16, **kwargs
     ):
         self.global_tokens = 0  # No global tokens for full cache (they are all global)
         super().__init__(max_batch_size, n_heads, head_dim, dtype, **kwargs)
@@ -539,7 +541,7 @@ class KVCacheRandom(KVCacheHeadConstant):
     ]
 
     def __init__(
-        self, max_batch_size, n_heads, head_dim, dtype=torch.bfloat16, **kwargs
+        self, max_batch_size, n_heads, head_dim, layer_idx=None, dtype=torch.bfloat16, **kwargs
     ):
         super().__init__(max_batch_size, n_heads, head_dim, dtype, **kwargs)
 
@@ -565,6 +567,7 @@ class KVCacheRecentGlobal(KVCacheHeadConstant):
         max_batch_size,
         n_heads,
         head_dim,
+        layer_idx=None,
         dtype=torch.bfloat16,
         **kwargs,
     ):
@@ -593,7 +596,7 @@ class KVCacheL2(KVCacheHeadSpecific):
     ]
 
     def __init__(
-        self, max_batch_size, n_heads, head_dim, dtype=torch.bfloat16, **kwargs
+        self, max_batch_size, n_heads, head_dim, layer_idx=None, dtype=torch.bfloat16, **kwargs
     ):
         super().__init__(max_batch_size, n_heads, head_dim, dtype, **kwargs)
 
@@ -657,6 +660,7 @@ class KVCacheHeavyHitter(KVCacheHeadSpecific):
         max_batch_size,
         n_heads,
         head_dim,
+        layer_idx=None,
         dtype=torch.bfloat16,
         variable_length=False,
         **kwargs,
@@ -804,7 +808,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         max_batch_size,
         n_heads,
         head_dim,
-        layer_idx,
+        layer_idx=None,
         dtype=torch.bfloat16,
         **kwargs,
     ):
@@ -1363,6 +1367,7 @@ class KVCacheAnalysis(KVCacheFull):
         max_batch_size,
         n_heads,
         head_dim,
+        layer_idx=None,
         dtype=torch.bfloat16,
         cache_strategy="heavy_hitter",
         **kwargs,
@@ -1482,7 +1487,7 @@ class KVCacheKeepItOdd(KVCacheHeadConstant):
     ]
 
     def __init__(
-        self, max_batch_size, n_heads, head_dim, dtype=torch.bfloat16, **kwargs
+        self, max_batch_size, n_heads, head_dim, layer_idx=None, dtype=torch.bfloat16, **kwargs
     ):
         super().__init__(max_batch_size, n_heads, head_dim, dtype, **kwargs)
 

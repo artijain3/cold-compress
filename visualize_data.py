@@ -40,9 +40,11 @@ def create_layer_donut(filename, output_dir, layer):
     output_file = os.path.join(output_dir, f"strategy_layer_{layer}.png")
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     plt.close(fig)
+    print(f"written f'strategy_layer_{layer}.png' to {output_dir}")
     
     
 def visualize_head_strategies(filename, output_dir, layers=[]):
+    print('hello')
     for layer in layers:
         create_layer_donut(filename, output_dir, layer)
 
@@ -50,5 +52,5 @@ def visualize_head_strategies(filename, output_dir, layers=[]):
 if __name__ == "__main__":
     layers = [0, 6, 11, 16, 20, 24, 31]
     filename = "/home/artij/mlsys/coldcompress/profiling_results/per_head_profiling.csv"
-    output_dir = "profiling_results/visuals"
+    output_dir = "/home/artij/mlsys/coldcompress/profiling_results/visuals"
     visualize_head_strategies(filename, output_dir, layers)
