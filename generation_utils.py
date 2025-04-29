@@ -2,6 +2,7 @@ import itertools
 import time
 from typing import Optional, Tuple
 from pathlib import Path
+import os
 import pdb
 
 import torch
@@ -16,6 +17,8 @@ from tokenizer import TokenizerInterface
 
 default_device = "cuda" if torch.cuda.is_available() else "cpu"
 
+current_directory = os.getcwd()
+HH_TOKEN_FILENAME = os.path.join(current_directory, "heavy-hitter_results", "token_analysis.txt")
 
 def snake_to_capitalized(s):
     return " ".join(word.capitalize() for word in s.split("_"))
@@ -160,7 +163,9 @@ def prefill(
         .to(x.device)
     )
     logits = model(x, input_pos, mask=causal_mask, is_prefill=True)
-    # pdb.set_trace()
+
+
+
     return greedy(logits, next_token)
 
 
@@ -403,6 +408,7 @@ def get_cache_stats(model: Transformer, prompt_len: int, gen_len: int):
 @torch.no_grad()
 def generate(
     model: Transformer,
+    tokenizer: TokenizerInterface, 
     prompt: torch.Tensor,
     prefill: callable,
     decode_one_token: callable,
@@ -475,6 +481,79 @@ def generate(
         **sampling_kwargs,
     )
 
+    # @hlwong: Cache Token Analysis
+    x = prompt.view(1, -1)[0]
+    token_ids_by_layer = {l_idx : set() for l_idx in range(len(model.layers))}
+    token_ids_by_head = {h_idx : set() for h_idx in range(model.config.n_head)}
+    for l_idx, layer in enumerate(model.layers):
+        cached_pos = layer.attention.kv_cache.pos
+        for h_idx in range(model.config.n_head):
+            cached_token_ids = cached_pos[0, h_idx]
+            cached_token_ids = cached_token_ids[cached_token_ids != -1]
+            cached_token_ids = x[cached_token_ids]
+
+            cached_token_set = set(cached_token_ids.tolist())
+            token_ids_by_head[h_idx].update(cached_token_set)
+            token_ids_by_layer[l_idx].update(cached_token_set)
+
+    # @hlwong: Per head, analyze heavy hitter set
+    special_token_id_set = torch.tensor(list(itertools.chain.from_iterable(tokenizer.special_ids())), device=device) 
+    punc_token_id_set = torch.tensor(tokenizer.punctuation_ids(), device=device) 
+    percentages_by_layer = {}
+    for l_idx, token_ids in token_ids_by_layer.items():
+        token_ids = torch.tensor(list(token_ids), device=device)
+        total_tokens = token_ids.size(0)
+
+        # Create boolean masks for special and punctuation tokens
+        special_mask = torch.isin(token_ids, special_token_id_set)
+        punc_mask = torch.isin(token_ids, punc_token_id_set)
+
+        # Count special and punctuation tokens
+        special_count = special_mask.sum().item()
+        punc_count = punc_mask.sum().item()
+        
+        special_percentage = (special_count / total_tokens * 100) if total_tokens > 0 else 0
+        punc_percentage = (punc_count / total_tokens * 100) if total_tokens > 0 else 0
+        
+        percentages_by_layer[l_idx] = {
+            "special_percentage": special_percentage,
+            "punctuation_percentage": punc_percentage
+        }
+
+    percentages_by_head = {}
+    for h_idx, token_ids in token_ids_by_head.items():
+        token_ids = torch.tensor(list(token_ids), device=device)
+        total_tokens = token_ids.size(0)
+
+        # Create boolean masks for special and punctuation tokens
+        special_mask = torch.isin(token_ids, special_token_id_set)
+        punc_mask = torch.isin(token_ids, punc_token_id_set)
+
+        # Count special and punctuation tokens
+        special_count = special_mask.sum().item()
+        punc_count = punc_mask.sum().item()
+        
+        special_percentage = (special_count / total_tokens * 100) if total_tokens > 0 else 0
+        punc_percentage = (punc_count / total_tokens * 100) if total_tokens > 0 else 0
+        
+        percentages_by_head[h_idx] = {
+            "special_percentage": special_percentage,
+            "punctuation_percentage": punc_percentage
+        }
+
+    # Write percentages
+    # with open(HH_TOKEN_FILENAME, 'a') as f:
+    #     f.write(f"Heavy-Hitter Analysis\n")
+    #     for l_idx, percentages in percentages_by_layer.items():
+    #         print(f"Layer {l_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%")
+    #         f.write(f"Layer {l_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%\n")
+
+    # with open(HH_TOKEN_FILENAME, 'a') as f:
+    #     for h_idx, percentages in percentages_by_head.items():
+    #         print(f"Head {h_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%")
+    #         f.write(f"Head {h_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%\n")
+    #     f.write(f"\n")
+
     t1 = time.perf_counter()
 
     prefill_seconds = t1 - t0
@@ -521,6 +600,8 @@ def generate(
         "decode_seconds": decode_seconds,
         "decode_seconds_frac_of_total": decode_seconds / total_seconds,
         "memory_used_gb": torch.cuda.max_memory_reserved() / 1e9,
+        "percentages_by_layer": percentages_by_layer,
+        "percentages_by_head": percentages_by_head
     }
 
     if len(generated_tokens) > 0:

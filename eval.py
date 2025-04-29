@@ -15,9 +15,10 @@ import itertools
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Optional, List
+from typing import Tuple, Optional, List
 from collections import defaultdict, Counter
 from tqdm.auto import tqdm
+import pdb
 
 import torch
 import torch._dynamo.config
@@ -232,6 +233,7 @@ def run_task(
         with prof:
             y, probs, perf_stats = generate(
                 model,
+                tokenizer,
                 input,
                 prefill,
                 decode_one_token,
@@ -243,6 +245,17 @@ def run_task(
                 decode_first_token=decode_first_token,
             )
 
+        # Aggregate percentages by layer and head
+        if 'percentages_by_layer' in perf_stats:
+            for l_idx, percentages in perf_stats['percentages_by_layer'].items():
+                for key, value in percentages.items():
+                    aggregate_metrics[f"layer_{l_idx}_{key}"].append(value)
+
+        if 'percentages_by_head' in perf_stats:
+            for h_idx, percentages in perf_stats['percentages_by_head'].items():
+                for key, value in percentages.items():
+                    aggregate_metrics[f"head_{h_idx}_{key}"].append(value)
+        
         for k, v in perf_stats.items():
             aggregate_metrics[k].append(v)
 
@@ -292,6 +305,9 @@ def run_task(
 
         # Reset KV Cache state
         reset_caches(model)
+    
+    del aggregate_metrics["percentages_by_layer"]
+    del aggregate_metrics["percentages_by_head"]
 
     print(
         f"Average tokens/sec: {torch.mean(torch.tensor(aggregate_metrics['total_toks_per_sec'])).item():.2f}"
@@ -326,6 +342,39 @@ def run_task(
         pred_df = pd.DataFrame({"prompt": prompts, "prediction": predictions, "label": labels})
 
     return task_metrics, pred_df, task_cache_kwargs
+
+def compute_average_percentages(aggregate_metrics: dict) -> Tuple[dict, dict]:
+    """
+    Compute average percentages for layers and heads from aggregated metrics.
+
+    Args:
+        aggregate_metrics: A dictionary containing lists of percentages for each layer and head.
+
+    Returns:
+        A tuple of two dictionaries: average percentages by layer and by head.
+    """
+    avg_by_layer = {}
+    avg_by_head = {}
+
+    # Compute averages for layers
+    for key, values in aggregate_metrics.items():
+        if key.startswith("layer_"):
+            layer_idx = int(key.split("_")[1])
+            if layer_idx not in avg_by_layer:
+                avg_by_layer[layer_idx] = {}
+            metric_type = key.split("_")[2]
+            avg_by_layer[layer_idx][metric_type] = sum(values) / len(values) if values else 0
+
+    # Compute averages for heads
+    for key, values in aggregate_metrics.items():
+        if key.startswith("head_"):
+            head_idx = int(key.split("_")[1])
+            if head_idx not in avg_by_head:
+                avg_by_head[head_idx] = {}
+            metric_type = key.split("_")[2]
+            avg_by_head[head_idx][metric_type] = sum(values) / len(values) if values else 0
+
+    return avg_by_layer, avg_by_head
 
 def main(
     args: argparse.Namespace,
