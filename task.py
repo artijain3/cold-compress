@@ -479,6 +479,131 @@ class GSM8KTask(EvaluationTask):
             "labels": [row["answer"]]
         }
         
+    def __init__(self, prompt_template=DEFAULT_PROMPT_TEMPLATE, max_tokens=32, **kwargs):
+        super().__init__(
+            prompt_template=prompt_template,
+            max_tokens=max_tokens,
+            hf_args=["THUDM/LongBench", "hotpotqa"],  # 
+            **kwargs
+        )
+
+        self.test_split = "test"  # 
+
+        self.metrics = {
+            "ExactMatch": AutoMetric.from_name("exact_match"),  # need to add f1 later
+        }
+
+    def prepare_row(self, row: dict):
+        prompt = self.prompt_template.format(
+            context=row["context"],
+            input=row["input"]
+        ).strip()
+
+        return {
+            "prompt": prompt,
+            "context": None,
+            "labels": row["answers"],  
+        }
+        
+        
+
+        
+class HotpotQATask(EvaluationTask):
+    DEFAULT_PROMPT_TEMPLATE = (
+        "Answer the question based on the given passages. "
+        "Only give me the answer and do not output any other words.\n\n"
+        "The following are given passages.\n{context}\n\n"
+        "Answer the question based on the given passages. "
+        "Only give me the answer and do not output any other words.\n\n"
+        "Question: {input}\n"
+        "Answer:"
+    )
+    
+    def __init__(self, prompt_template=DEFAULT_PROMPT_TEMPLATE, max_tokens=32, **kwargs):
+        super().__init__(
+            prompt_template=prompt_template,
+            max_tokens=max_tokens,
+            hf_args=["THUDM/LongBench", "hotpotqa"],  
+            **kwargs
+        )
+
+        self.test_split = "test"  # 
+
+        self.metrics = {
+            "ExactMatch": AutoMetric.from_name("exact_match"),  # need to add f1 later
+        }
+
+    def prepare_row(self, row: dict):
+        prompt = self.prompt_template.format(
+            context=row["context"],
+            input=row["input"]
+        ).strip()
+
+        return {
+            "prompt": prompt,
+            "context": None,
+            "labels": row["answers"],  
+        }
+
+    
+class QuALITYTask(EvaluationTask):
+    DEFAULT_PROMPT_TEMPLATE = """You will be given a passage and a question with multiple answer choices.
+    Choose the correct answer.
+
+    Passage:
+    {article}
+
+    Question:
+    {question}
+
+    Choices:
+    {choices}
+
+    Answer with only A, B, C, D, or E.
+    """
+    def __init__(self, prompt_template=DEFAULT_PROMPT_TEMPLATE, max_tokens=1, **kwargs):
+        super().__init__(
+            prompt_template=prompt_template,
+            max_tokens=max_tokens,
+            hf_args=["tasksource/QuALITY"],
+            **kwargs
+        )
+
+        self.test_split = "validation"  # or "train" if needed
+
+        self.metrics = {
+            "ExactMatch": AutoMetric.from_name("exact_match"),
+        }
+
+    def prepare_row(self, row: dict):
+        print("NOW RUNNING NEW CODE")
+
+        # Build choices block dynamically
+        choice_letters = ["A", "B", "C", "D", "E"]  # supports up to 5 options
+        choice_lines = []
+        for i, choice_text in enumerate(row["options"]):
+            choice_lines.append(f"{choice_letters[i]}. {choice_text}")
+        choices_str = "\n".join(choice_lines)
+
+        # Final prompt
+        prompt = self.prompt_template.format(
+            article=row["article"],
+            question=row["question"],
+            choices=choices_str,
+        ).strip()
+
+        # Label mapping
+        answer_mapping = {0: "A", 1: "B", 2: "C", 3: "D", 4: "E"}
+        label = answer_mapping[row["gold_label"]]  # maps 0-4 correctly
+
+        return {
+            "prompt": prompt,
+            "context": None,
+            "labels": [label],
+        }
+
+    
+
 class ScrollsQuality(LogitEvaluationTask):
     """
     Evaluation dataset derived from `tau/scrolls`.
@@ -795,6 +920,8 @@ TASK_MAPPING = {
     "triviaqa": TriviaQA,
     "truthfulqa": TruthfulQA,
     "gsm8k": GSM8KTask,
+    "quality": QuALITYTask,
+    "hotpot": HotpotQATask,
 }
 
 

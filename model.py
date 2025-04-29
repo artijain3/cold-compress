@@ -26,7 +26,7 @@ def find_multiple(n: int, k: int) -> int:
 
 @dataclass
 class ModelArgs:
-    block_size: int = 2048
+    block_size: int = 4000
     vocab_size: int = 32000
     n_layer: int = 32
     n_head: int = 32
@@ -71,10 +71,14 @@ class ModelArgs:
         return cls(**transformer_configs[config[0]])
 
 
+# block_size --> max context length
+# vocab_size --> size of vocab/token set
+# n_layer --> number of transformers layer
+# dim --> embedding dim
+# rope_base --> base value for RopE position embeddings
 transformer_configs = {
-    "CodeLlama-7b-Python-hf": dict(
-        block_size=16384, vocab_size=32000, n_layer=32, dim=4096, rope_base=1000000
-    ),
+    "CodeLlama-7b-Python-hf": dict(block_size=16384, vocab_size=32000, n_layer=32, dim=4096, rope_base=1000000),
+    "LLaMA-2-7B-32K": dict(block_size=32000, vocab_size=32000, n_layer=32, dim=4096),
     "7B": dict(n_layer=32, n_head=32, dim=4096),
     "13B": dict(n_layer=40, n_head=40, dim=5120),
     "30B": dict(n_layer=60, n_head=52, dim=6656),
@@ -93,7 +97,7 @@ transformer_configs = {
     "Mistral-7B": dict(
         n_layer=32,
         n_head=32,
-        n_local_heads=8,
+        n_local_heads=8, # quest for group-query attention
         dim=4096,
         intermediate_size=14336,
         vocab_size=32000,
@@ -131,8 +135,8 @@ transformer_configs = {
     ),
     "Qwen2-1.5B-Instruct": dict(
         block_size=32768,
-        n_layer=28,
-        n_head=12,
+        n_layer=28, # number of transformer layers
+        n_head=12, # number of attention heads
         n_local_heads=2,
         dim=1536,
         intermediate_size=8960,

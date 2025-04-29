@@ -94,6 +94,7 @@ def merge_cache_config(args):
 def compute_max_seq_length(
     model, prompt_lens: list[int], target_lens: list[int], max_new_tokens: int
 ) -> int:
+    
     max_prompt_length = max(len(prompt_lens[i]) for i in range(len(prompt_lens)))
     # Should either pass target_lens or max_new_tokens
     max_target_lens = (
@@ -109,6 +110,7 @@ def compute_max_seq_length(
         )
         print(f"Setting to model's max_seq_length of {model.config.block_size}.")
         max_seq_length = model.config.block_size
+    print(f"in generation_utils, compute_max_seq_length --> max_new_tokens: {max_new_tokens}, max_prompt_length: {max_prompt_length}")
     print(f"Maximum context length of {max_seq_length} tokens.")
     return max_prompt_length, max_seq_length
 

@@ -9,10 +9,10 @@ hybrid_strategies:  #
   - strategy: "special"
   - strategy: "special_punc"
   - strategy: "special_punc_heavy_hitter"
-    heavy_hitter_frac: 0.5 # @artij: where does this value come from?
+    heavy_hitter_frac: 0.3 # @artij: where does this value come from?
   - strategy: "special_punch_window_heavy_hitter"
-    heavy_hitter_frac: 0.5 # @artij: where does this value come from?
-    recent_window: 0.1 # @artij: where does this value come from?
+    heavy_hitter_frac: 0.3 # @artij: where does this value come from?
+    recent_window: 0.3 # @artij: where does this value come from?
   - strategy: "full"
   
 
@@ -25,3 +25,5 @@ hybrid_strategies:  #
   #   heavy_hitter_frac: 0.5 # Fraction of important tokens to keep
   #   recent_window: 0.1  # Fraction of recent tokens to keep
   # - strategy: "full"
+
+  # special --> punc --> window --> heavy_hitter --> full

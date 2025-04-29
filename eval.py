@@ -14,7 +14,7 @@ import shutil
 import itertools
 import pandas as pd
 import numpy as np
-from pathlib import Path
+from pathlib impt Path
 from typing import Optional, List
 from collections import defaultdict, Counter
 from tqdm.auto import tqdm
@@ -113,9 +113,7 @@ def args_to_str(args):
 
     # Hybrid Strategies will be too long to save in a file name so just need to pick the strategy
     if "hybrid_strategies" in args_dict:
-        args_dict["hybrid_strategies"] = [
-            x["strategy"] for x in args_dict["hybrid_strategies"]
-        ]
+        args_dict["hybrid_strategies"] = [x["strategy"] for x in args_dict["hybrid_strategies"]]
 
     return (
         "__".join(
@@ -211,7 +209,7 @@ def run_task(
             torch.profiler._utils._init_for_cuda_graphs()
             prof = torch.profiler.profile()
         with prof:
-            y, probs, perf_stats = generate(
+            y, probs, perf_stats = generate(33
                 model,
                 input,
                 prefill,
