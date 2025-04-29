@@ -49,12 +49,14 @@ class EvaluationTask(ABC):
         # Can over-write if not using HF
         self.dataset = load_dataset(*self.hf_args)
 
-    def get_split(self, split):
+    def get_split(self, split, valid_indices=[]):
+        # identify columns to remove
         remove_cols = [
             col
             for col in self.dataset[split].column_names
             if col not in self.mandatory_cols
         ]
+        
         if not self.is_ready[split]:
             split_data = self.dataset[split]
             split_data = split_data.map(
@@ -79,8 +81,11 @@ class EvaluationTask(ABC):
 
             self.dataset[split] = filtered_data
             self.is_ready[split] = True
-
-        return self.dataset[split]
+            
+        final_split = self.dataset[split]
+        if valid_indices:
+            final_split = final_split.select(valid_indices)
+        return final_split
 
     def get_train(self):
         return self.get_split(self.train_split)
@@ -88,8 +93,8 @@ class EvaluationTask(ABC):
     def get_validation(self):
         return self.get_split(self.validation_split)
 
-    def get_test(self):
-        return self.get_split(self.test_split)
+    def get_test(self, valid_indices=[]):
+        return self.get_split(self.test_split, valid_indices)
 
     def compute_metrics(self, predictions, split, dataset):
         assert self.is_ready[split], f"Split {split} has not been processed yet."
@@ -114,8 +119,9 @@ class EvaluationTask(ABC):
             predictions, self.validation_split, self.get_validation()
         )
 
-    def test_metrics(self, predictions):
-        return self.compute_metrics(predictions, self.test_split, self.get_test())
+    def test_metrics(self, predictions, valid_indices=[]):
+        dataset = self.get_test(valid_indices)        
+        return self.compute_metrics(predictions, self.test_split, dataset)
 
     def prepare_batch(self, batch):
         keys = list(batch.keys())
@@ -561,7 +567,7 @@ class QuALITYTask(EvaluationTask):
 
     Answer with only A, B, C, D, or E.
     """
-    def __init__(self, prompt_template=DEFAULT_PROMPT_TEMPLATE, max_tokens=1, **kwargs):
+    def __init__(self, prompt_template=DEFAULT_PROMPT_TEMPLATE, max_tokens=32, **kwargs):
         super().__init__(
             prompt_template=prompt_template,
             max_tokens=max_tokens,
@@ -572,7 +578,7 @@ class QuALITYTask(EvaluationTask):
         self.test_split = "validation"  # or "train" if needed
 
         self.metrics = {
-            "ExactMatch": AutoMetric.from_name("exact_match"),
+            "BertScore": AutoMetric.from_name("bertscore"),
         }
 
     def prepare_row(self, row: dict):

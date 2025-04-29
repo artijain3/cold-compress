@@ -171,7 +171,7 @@ def run_task(
     all_probs = []
     task_metrics = {}
 
-    test = task.get_test()
+    test = task.get_test() # this would get all the datasamples in get_test
 
     if len(test) == 0:
         print(
@@ -222,7 +222,6 @@ def run_task(
         prompt_length = input.size(0)
         max_new_tokens = min(task.max_tokens, max_seq_length - prompt_length)
         assert max_new_tokens > 0, f"Prompt too long for model: {prompt_length}"
-        print(input.size(0))
         device_sync(device=device)  # MKG
 
         if not profile or (use_tp and rank != 0):
@@ -278,7 +277,9 @@ def run_task(
             end = y.size(0)
             if y[-1] in terminator_ids:
                 end = -1
-            pred = tokenizer.decode(y[prompt_length:end].tolist())
+                
+            output_from_y = y[prompt_length:end].tolist()
+            pred = tokenizer.decode(output_from_y)
 
             if args.debug:
                 print(f"Prediction: {pred}")
@@ -321,7 +322,7 @@ def run_task(
         pred_df = None
     else:
         pred_units = all_probs if task.requires_logits else predictions
-        # task_metrics.update(flatten_dict(task.test_metrics(pred_units))) # @hlwong: due to filtering
+        task_metrics.update(flatten_dict(task.test_metrics(pred_units, valid_indices))) # @hlwong: due to filtering
         pred_df = pd.DataFrame({"prompt": prompts, "prediction": predictions, "label": labels})
 
     return task_metrics, pred_df, task_cache_kwargs
