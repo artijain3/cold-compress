@@ -14,7 +14,7 @@ import shutil
 import itertools
 import pandas as pd
 import numpy as np
-from pathlib impt Path
+from pathlib import Path
 from typing import Optional, List
 from collections import defaultdict, Counter
 from tqdm.auto import tqdm
@@ -130,6 +130,24 @@ def args_to_str(args):
         + debug_suffix
     )
 
+def filter_long_inputs_with_indices(inputs, max_length):
+    """
+    Filters out inputs that exceed the specified maximum length and returns the indices of retained inputs.
+
+    Args:
+        inputs (list of torch.Tensor): The list of input tensors.
+        max_length (int): The maximum allowed length for inputs.
+
+    Returns:
+        tuple: A tuple containing the filtered list of inputs and their corresponding indices.
+    """
+    filtered_inputs = []
+    indices = []
+    for idx, input in enumerate(inputs):
+        if input.size(0) <= max_length:
+            filtered_inputs.append(input)
+            indices.append(idx)
+    return filtered_inputs, indices
 
 def run_task(
     args: argparse.Namespace,
@@ -194,13 +212,17 @@ def run_task(
         model, tokenizer, device, target_length, cache_kwargs.copy()
     )
 
+    inputs, valid_indices = filter_long_inputs_with_indices(inputs, 3250)
+
+    prompts = [prompts[i] for i in valid_indices]
+    labels = [test["labels"][i] for i in valid_indices]
     for i in tqdm(range(len(inputs))):
         input = inputs[i].to(device)
         next_tokens = None if label_ids is None else label_ids[i].to(device)
         prompt_length = input.size(0)
         max_new_tokens = min(task.max_tokens, max_seq_length - prompt_length)
         assert max_new_tokens > 0, f"Prompt too long for model: {prompt_length}"
-
+        print(input.size(0))
         device_sync(device=device)  # MKG
 
         if not profile or (use_tp and rank != 0):
@@ -209,7 +231,7 @@ def run_task(
             torch.profiler._utils._init_for_cuda_graphs()
             prof = torch.profiler.profile()
         with prof:
-            y, probs, perf_stats = generate(33
+            y, probs, perf_stats = generate(
                 model,
                 input,
                 prefill,
@@ -299,11 +321,10 @@ def run_task(
         pred_df = None
     else:
         pred_units = all_probs if task.requires_logits else predictions
-        task_metrics.update(flatten_dict(task.test_metrics(pred_units)))
-        pred_df = pd.DataFrame({"prompt": prompts, "prediction": predictions})
+        # task_metrics.update(flatten_dict(task.test_metrics(pred_units))) # @hlwong: due to filtering
+        pred_df = pd.DataFrame({"prompt": prompts, "prediction": predictions, "label": labels})
 
     return task_metrics, pred_df, task_cache_kwargs
-
 
 def main(
     args: argparse.Namespace,

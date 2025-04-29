@@ -576,8 +576,6 @@ class QuALITYTask(EvaluationTask):
         }
 
     def prepare_row(self, row: dict):
-        print("NOW RUNNING NEW CODE")
-
         # Build choices block dynamically
         choice_letters = ["A", "B", "C", "D", "E"]  # supports up to 5 options
         choice_lines = []

@@ -31,8 +31,8 @@ def write_strategy_scores_to_csv(filename, data_rows=[]):
             })
             
 current_directory = os.getcwd()
-allfilename = "hybrid_attention_profiling.csv"
-FILENAME = os.path.join(current_directory, "profiling_results", allfilename)
+PROFILE_FILENAME = "hybrid_attention_profiling.csv"
+FILENAME = os.path.join(current_directory, "profiling_results", PROFILE_FILENAME)
 PER_HEAD_FILENAME = os.path.join(current_directory, "profiling_results", "per_head_profiling.csv")
 write_strategy_scores_to_csv(FILENAME)
 write_strategy_scores_to_csv(PER_HEAD_FILENAME)

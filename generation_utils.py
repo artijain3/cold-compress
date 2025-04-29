@@ -2,6 +2,7 @@ import itertools
 import time
 from typing import Optional, Tuple
 from pathlib import Path
+import pdb
 
 import torch
 import torch._dynamo.config
@@ -159,6 +160,7 @@ def prefill(
         .to(x.device)
     )
     logits = model(x, input_pos, mask=causal_mask, is_prefill=True)
+    # pdb.set_trace()
     return greedy(logits, next_token)
 
 
