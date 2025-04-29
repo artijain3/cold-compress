@@ -561,7 +561,7 @@ class QuALITYTask(EvaluationTask):
 
     Answer with only A, B, C, D, or E.
     """
-    def __init__(self, prompt_template=DEFAULT_PROMPT_TEMPLATE, max_tokens=1, **kwargs):
+    def __init__(self, prompt_template=DEFAULT_PROMPT_TEMPLATE, max_tokens=32, **kwargs):
         super().__init__(
             prompt_template=prompt_template,
             max_tokens=max_tokens,
