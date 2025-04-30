@@ -213,7 +213,7 @@ def run_task(
         model, tokenizer, device, target_length, cache_kwargs.copy()
     )
 
-    inputs, valid_indices = filter_long_inputs_with_indices(inputs, 3250)
+    inputs, valid_indices = filter_long_inputs_with_indices(inputs, 3000)
 
     prompts = [prompts[i] for i in valid_indices]
     labels = [test["labels"][i] for i in valid_indices]
@@ -528,6 +528,12 @@ def setup(args) -> Path:
         / "__".join(compress_list(args.cache_strategy))
         / sub_dir
     )
+    
+    # out_dir = (
+    #     Path(__file__).parent
+    #     / "results"
+    #     / args.checkpoint_path.parent.name
+    # )
 
     print(f"Saving to {out_dir}")
     # Make out_dir and don't err out if it already exists

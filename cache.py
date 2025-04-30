@@ -653,6 +653,7 @@ class KVCacheHeavyHitter(KVCacheHeadSpecific):
         "history_window_size", # history to keep in attention history
         "recent_window",
         "attn_thresholding",
+        "min_recovery_frac", # @artij: trying to see if the scores kept go above the budget similar to how fastgen does it
     ]
 
     def __init__(
@@ -800,7 +801,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         "global_tokens",
         "token_ids",
         "min_recovery_frac",
-        # "recent_window",
+        "recent_window", # @artij: needed for hybrid special_punc_hh
         "hybrid_strategies",
     ]
 
@@ -817,10 +818,10 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         # self.aggregate_metrics = defaultdict(list)
         self.attn_thresholding = False
         self.history_window_size = 400  # Default value for ScissorHands
-        self.recent_window = (
-            None  # Dummy value: Recent windows are defined per attention head
-        )
-        # self.recent_window = recentwin
+        # self.recent_window = (
+        #     None  # Dummy value: Recent windows are defined per attention head
+        # )
+        # self.recent_window = recent_window
         super().__init__(
             max_batch_size,
             n_heads,
@@ -833,7 +834,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         self.requires_special = any(
             ["special" in strat["strategy"] for strat in self.hybrid_strategies]
         )
-        mask_shape = (max_batch_size, n_heads, self.max_cache_length)
+        mask_shape = (max_batch_size, n_heads, self.max_cache_length) 
         if self.requires_special:
             special_ids = [torch.tensor(ids) for ids in kwargs["token_ids"]["special"]] # converts a list of special token IDs into list of tensors
             self.register_buffer("special_ids", torch.nested.nested_tensor(special_ids)) # registers special_ids as a nested tensor in buffer (nested tensor is structure for lsits of tensors that have variable lengths)
@@ -945,8 +946,8 @@ class KVCacheHybrid(KVCacheHeavyHitter):
             budget += self.num_punc
 
         if "window" in name:
-            # budget += round(self.recent_window)
-            budget += round(strategy["recent_window"] * self.max_cache_length)
+            budget += round(self.recent_window)
+            # budget += round(strategy["recent_window"] * self.max_cache_length)
 
         if "heavy_hitter" in name:
             budget += round(strategy["heavy_hitter_frac"] * self.max_cache_length)
@@ -957,10 +958,9 @@ class KVCacheHybrid(KVCacheHeavyHitter):
             return _end_idx(), False
 
         if "heavy_hitter" in name or "window" in name:
-            recent_window = round(
-                strategy.get("recent_window", 0) * self.max_cache_length
-            )
-            # recent_window = self.recent_window
+            # recent_window = round(
+                # strategy.get("recent_window", 0) * self.max_cache_length)
+            recent_window = self.recent_window
             fill_idx = self._eviction_idx_for_head(
                 head_idx,
                 input_pos,
@@ -1120,8 +1120,8 @@ class KVCacheHybrid(KVCacheHeavyHitter):
                 strat_mask |= (
                     create_window_attention_mask(
                         seq_len,
-                        # max(1, self.recent_window),
-                        max(1, int(s["recent_window"] * total_len)),
+                        max(1, self.recent_window),
+                        # max(1, int(s["recent_window"] * total_len)),
                         device,
                         global_tokens=self.global_tokens,
                     )
