@@ -221,6 +221,7 @@ def run_task(
         input = inputs[i].to(device)
         next_tokens = None if label_ids is None else label_ids[i].to(device)
         prompt_length = input.size(0)
+        
         max_new_tokens = min(task.max_tokens, max_seq_length - prompt_length)
         assert max_new_tokens > 0, f"Prompt too long for model: {prompt_length}"
         device_sync(device=device)  # MKG
@@ -306,8 +307,9 @@ def run_task(
         # Reset KV Cache state
         reset_caches(model)
     
-    del aggregate_metrics["percentages_by_layer"]
-    del aggregate_metrics["percentages_by_head"]
+        del aggregate_metrics["percentages_by_layer"]
+        del aggregate_metrics["percentages_by_head"]
+
 
     print(
         f"Average tokens/sec: {torch.mean(torch.tensor(aggregate_metrics['total_toks_per_sec'])).item():.2f}"

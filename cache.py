@@ -800,6 +800,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         "global_tokens",
         "token_ids",
         "min_recovery_frac",
+        # "recent_window",
         "hybrid_strategies",
     ]
 
@@ -819,6 +820,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
         self.recent_window = (
             None  # Dummy value: Recent windows are defined per attention head
         )
+        # self.recent_window = recentwin
         super().__init__(
             max_batch_size,
             n_heads,
@@ -943,6 +945,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
             budget += self.num_punc
 
         if "window" in name:
+            # budget += round(self.recent_window)
             budget += round(strategy["recent_window"] * self.max_cache_length)
 
         if "heavy_hitter" in name:
@@ -957,6 +960,7 @@ class KVCacheHybrid(KVCacheHeavyHitter):
             recent_window = round(
                 strategy.get("recent_window", 0) * self.max_cache_length
             )
+            # recent_window = self.recent_window
             fill_idx = self._eviction_idx_for_head(
                 head_idx,
                 input_pos,
@@ -1111,11 +1115,12 @@ class KVCacheHybrid(KVCacheHeavyHitter):
 
             if "window" in name:
                 assert (
-                    "recent_window" in s and s["recent_window"] <= 1
+                "recent_window" in s and s["recent_window"] <= 1
                 ), "Window strategy should have recent_window expressed as a fraction <= 1."
                 strat_mask |= (
                     create_window_attention_mask(
                         seq_len,
+                        # max(1, self.recent_window),
                         max(1, int(s["recent_window"] * total_len)),
                         device,
                         global_tokens=self.global_tokens,

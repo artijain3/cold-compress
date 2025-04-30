@@ -18,7 +18,8 @@ from tokenizer import TokenizerInterface
 default_device = "cuda" if torch.cuda.is_available() else "cpu"
 
 current_directory = os.getcwd()
-HH_TOKEN_FILENAME = os.path.join(current_directory, "heavy-hitter_results", "token_analysis.txt")
+# HH_TOKEN_FILENAME = os.path.join(current_directory, "heavy-hitter_results", "token_analysis.txt")
+HH_TOKEN_FILENAME = os.path.join("/home/artij/mlsys/coldcompress/results/Llama-2-7b-chat-hf/hybrid", "token_analysis.txt")
 
 def snake_to_capitalized(s):
     return " ".join(word.capitalize() for word in s.split("_"))
@@ -483,18 +484,19 @@ def generate(
 
     # @hlwong: Cache Token Analysis
     x = prompt.view(1, -1)[0]
-    token_ids_by_layer = {l_idx : set() for l_idx in range(len(model.layers))}
-    token_ids_by_head = {h_idx : set() for h_idx in range(model.config.n_head)}
+    token_ids_by_layer = {l_idx : [] for l_idx in range(len(model.layers))}
+    token_ids_by_head = {h_idx : [] for h_idx in range(model.config.n_head)}
     for l_idx, layer in enumerate(model.layers):
         cached_pos = layer.attention.kv_cache.pos
         for h_idx in range(model.config.n_head):
-            cached_token_ids = cached_pos[0, h_idx]
+            cached_token_ids = cached_pos[0, h_idx] 
             cached_token_ids = cached_token_ids[cached_token_ids != -1]
             cached_token_ids = x[cached_token_ids]
+            # print(f"head index: {h_idx} --> len(cached_token_ids) = {len(cached_token_ids)}")
 
-            cached_token_set = set(cached_token_ids.tolist())
-            token_ids_by_head[h_idx].update(cached_token_set)
-            token_ids_by_layer[l_idx].update(cached_token_set)
+            cached_token_set = cached_token_ids.tolist()
+            token_ids_by_head[h_idx].extend(cached_token_set)
+            token_ids_by_layer[l_idx].extend(cached_token_set)
 
     # @hlwong: Per head, analyze heavy hitter set
     special_token_id_set = torch.tensor(list(itertools.chain.from_iterable(tokenizer.special_ids())), device=device) 
@@ -542,17 +544,17 @@ def generate(
         }
 
     # Write percentages
-    # with open(HH_TOKEN_FILENAME, 'a') as f:
-    #     f.write(f"Heavy-Hitter Analysis\n")
-    #     for l_idx, percentages in percentages_by_layer.items():
-    #         print(f"Layer {l_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%")
-    #         f.write(f"Layer {l_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%\n")
+    with open(HH_TOKEN_FILENAME, 'a') as f:
+        f.write(f"Heavy-Hitter Analysis\n")
+        for l_idx, percentages in percentages_by_layer.items():
+            print(f"Layer {l_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%")
+            f.write(f"Layer {l_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%\n")
 
-    # with open(HH_TOKEN_FILENAME, 'a') as f:
-    #     for h_idx, percentages in percentages_by_head.items():
-    #         print(f"Head {h_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%")
-    #         f.write(f"Head {h_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%\n")
-    #     f.write(f"\n")
+    with open(HH_TOKEN_FILENAME, 'a') as f:
+        for h_idx, percentages in percentages_by_head.items():
+            print(f"Head {h_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%")
+            f.write(f"Head {h_idx}: Special Tokens = {percentages['special_percentage']:.2f}%, Punctuation Tokens = {percentages['punctuation_percentage']:.2f}%\n")
+        f.write(f"\n")
 
     t1 = time.perf_counter()
 
