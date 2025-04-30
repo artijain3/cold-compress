@@ -1,0 +1,41 @@
+{
+    "tasks": [
+        "quality"
+    ],
+    "out_dir": null,
+    "debug": false,
+    "num_samples": -1,
+    "overwrite": false,
+    "seq_length": null,
+    "cache_config": "hybrid.yaml",
+    "decode_first_token": false,
+    "checkpoint_path": "checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth",
+    "profile": null,
+    "compile": false,
+    "device": "cuda",
+    "attn_top_k": 1.0,
+    "max_cache_length": [
+        1.0
+    ],
+    "cache_bits": null,
+    "cache_length_pattern": "tile",
+    "cache_strategy": [
+        "hybrid"
+    ],
+    "cache_strategy_pattern": "tile",
+    "feed_long_prompts": false,
+    "prompt_compression_strategy": [
+        "full"
+    ],
+    "global_tokens": 4,
+    "recent_window": 10,
+    "history_window_size": 1,
+    "attn_thresholding": false,
+    "min_recovery_frac": 0,
+    "hybrid_strategies": [
+        {
+            "strategy": "special_punc_window_heavy_hitter",
+            "heavy_hitter_frac": 0.09
+        }
+    ]
+}
